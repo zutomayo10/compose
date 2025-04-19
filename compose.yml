@@ -10,4 +10,4 @@
    webplantilla:
      build: ./webplantilla
      ports:
-       - 9000:9000
+       - 9000:8080
