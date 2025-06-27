@@ -104,9 +104,7 @@ La incorporación de tipos String y Float al compilador requirió el desarrollo 
 
 #### Tipo String
 
-El manejo de cadenas de texto se implementó a través de varias clases y estructuras especializadas que permiten el procesamiento completo de literales de cadena, desde su reconocimiento léxico hasta su evaluación en tiempo de ejecución.
-
-La clase **StringExp** representa los literales de cadena en el árbol sintáctico abstracto (AST). Esta clase hereda de la clase base `Exp` y encapsula el valor de la cadena como una propiedad de tipo `string`. Su implementación es la siguiente:
+El manejo de cadenas de texto se implementó a través de la clase **StringExp** que representa los literales de cadena en el árbol sintáctico abstracto (AST). Esta clase hereda de la clase base `Exp` y encapsula el valor de la cadena como una propiedad de tipo `string`:
 
 ```cpp
 class StringExp : public Exp
@@ -121,242 +119,175 @@ public:
 
 El constructor de `StringExp` recibe una referencia constante a un string, lo que garantiza eficiencia en la copia y evita modificaciones accidentales del valor durante la construcción. La función `accept` implementa el patrón Visitor, permitiendo que diferentes tipos de visitadores procesen esta expresión de manera polimórfica.
 
-En el nivel léxico, se implementó el token **STRING_TYPE** para identificar el tipo String en las declaraciones de variables. Este token se reconoce mediante la palabra clave "String" y se utiliza durante el análisis sintáctico para validar las declaraciones de tipo. El scanner también maneja los literales de cadena mediante un análisis especializado que procesa caracteres entre comillas dobles:
+En el nivel léxico, el scanner maneja los literales de cadena mediante un análisis especializado que procesa caracteres entre comillas dobles. El código del scanner muestra cómo se reconocen las cadenas:
 
 ```cpp
-Token* Scanner::scanString() {
-    string text = "";
-    consumeChar(); // Consume la comilla inicial
-    
-    while (current != '"' && current != '\0') {
-        if (current == '\\') {
-            consumeChar();
-            switch (current) {
-                case 'n': text += '\n'; break;
-                case 't': text += '\t'; break;
-                case 'r': text += '\r'; break;
-                case '\\': text += '\\'; break;
-                case '"': text += '"'; break;
-                default: text += current; break;
-            }
-        } else {
-            text += current;
+else if (c == '"')
+{
+    current++;
+    size_t start = current;
+
+    while (current < input.length() && input[current] != '"')
+    {
+        if (input[current] == '\\' && current + 1 < input.length())
+        {
+            current += 2;  // Manejo básico de escape sequences
         }
-        consumeChar();
+        else
+        {
+            current++;
+        }
     }
-    
-    if (current == '"') {
-        consumeChar(); // Consume la comilla final
-        return new Token(Token::STRING, text, line, col);
+
+    if (current >= input.length())
+    {
+        token = new Token(Token::ERR, input, first, current - first);
     }
-    return new Token(Token::ERR, text, line, col);
+    else
+    {
+        token = new Token(Token::STRING, input, start, current - start);
+        current++;
+    }
 }
 ```
 
-Esta función maneja secuencias de escape como `\n`, `\t`, `\r`, `\\` y `\"`, proporcionando funcionalidad completa para caracteres especiales dentro de las cadenas. El manejo de errores incluye la detección de cadenas no terminadas, retornando un token de error cuando no se encuentra la comilla de cierre.
+Esta función maneja secuencias de escape básicas incrementando el puntero en 2 posiciones cuando encuentra una barra invertida, proporcionando soporte fundamental para caracteres especiales dentro de las cadenas. El manejo de errores incluye la detección de cadenas no terminadas, retornando un token de error cuando no se encuentra la comilla de cierre.
 
 #### Tipo Float
 
-La implementación de números en coma flotante se centra en la clase **DecimalExp**, que maneja tanto la representación interna como las operaciones aritméticas de precisión flotante.
+La implementación de números en coma flotante se centra en la clase **DecimalExp**, que maneja tanto la representación interna como las operaciones aritméticas de precisión flotante:
 
 ```cpp
 class DecimalExp : public Exp
 {
 public:
-    double value;
-    DecimalExp(double v);
+    float value;
+    std::string original_text;
+    DecimalExp(float v);
     int accept(Visitor *visitor);
     ~DecimalExp();
 };
 ```
 
-La clase utiliza el tipo `double` de C++ para almacenar valores de precisión doble, proporcionando mayor rango y precisión que los tipos float estándar. El constructor acepta un valor double y lo almacena directamente, manteniendo la precisión original del literal analizado.
+La clase utiliza el tipo `float` de C++ para almacenar valores de precisión simple, y mantiene el texto original del literal para propósitos de depuración. El constructor acepta un valor float y lo almacena directamente, manteniendo la precisión original del literal analizado.
 
-El token **DECIMAL** se encarga del reconocimiento léxico de literales flotantes. El scanner implementa un análisis sofisticado que reconoce múltiples formatos de números flotantes:
+El scanner implementa un análisis sofisticado que reconoce múltiples formatos de números flotantes en la función `nextToken()`:
 
 ```cpp
-Token* Scanner::scanNumber() {
-    string num = "";
-    bool isFloat = false;
-    
-    // Escanear dígitos antes del punto decimal
-    while (isdigit(current)) {
-        num += current;
-        consumeChar();
-    }
-    
-    // Verificar punto decimal
-    if (current == '.') {
-        isFloat = true;
-        num += current;
-        consumeChar();
-        
-        // Escanear dígitos después del punto decimal
-        while (isdigit(current)) {
-            num += current;
-            consumeChar();
+if (isdigit(c))
+{
+    current++;
+    bool is_float = false;
+    bool is_int = false;
+    bool has_f = false;
+
+    while (current < input.length() && isdigit(input[current]))
+        current++;
+
+    if (current < input.length() && input[current] == '.')
+    {
+        if (current + 1 < input.length() && input[current + 1] == '.')
+        {
+            is_int = true;  // Detecta operador de rango ".."
+        }
+        else
+        {
+            is_float = true;
+            current++;
+            while (current < input.length() && isdigit(input[current]))
+                current++;
         }
     }
-    
-    // Verificar sufijo 'f' para float
-    if (current == 'f' || current == 'F') {
-        isFloat = true;
-        consumeChar();
+    else
+    {
+        is_int = true;
     }
-    
-    if (isFloat) {
-        double value = stod(num);
-        return new Token(Token::DECIMAL, to_string(value), line, col);
-    } else {
-        int value = stoi(num);
-        return new Token(Token::NUMBER, to_string(value), line, col);
+
+    if (is_float && current < input.length() && input[current] == 'f')
+    {
+        has_f = true;
+        current++;
+        token = new Token(Token::DECIMAL, input, first, current - first);
+        token->has_f = has_f;
+    }
+    else if (is_float)
+    {
+        token = new Token(Token::ERR, input, first, current - first);
+    }
+    else if (is_int && current < input.length() && input[current] == 'f')
+    {
+        has_f = true;
+        current++;
+        token = new Token(Token::DECIMAL, input, first, current - first);
+        token->has_f = has_f;
+    }
+    else
+    {
+        token = new Token(Token::NUM, input, first, current - first);
     }
 }
 ```
 
-Esta implementación reconoce formatos como `3.14`, `2.5f`, `42f`, y `0.001`, convirtiendo automáticamente el texto a valores numéricos apropiados. La función `stod` (string to double) maneja la conversión con manejo automático de errores de formato.
+Esta implementación reconoce formatos como `3.14f`, `2.5f`, y `42f`. Un aspecto interesante es que los literales flotantes sin el sufijo 'f' se marcan como errores, forzando la especificación explícita del tipo flotante. La lógica también maneja cuidadosamente la distinción entre el punto decimal y el operador de rango "..".
 
 ### 2. Operaciones Implementadas
 
-La implementación de operaciones para String y Float requirió la extensión significativa del sistema de evaluación de expresiones binarias y la incorporación de lógica de conversión de tipos automática.
+La implementación de operaciones para String y Float se maneja principalmente a través del sistema de visitadores, especialmente en `EvalVisitor` y `PrintVisitor`, que procesan las expresiones según su tipo.
 
 #### Operaciones con String
 
-Las operaciones con cadenas se implementaron principalmente a través de la sobrecarga semántica del operador de suma (`+`) para realizar concatenación. Esta funcionalidad se maneja en la clase `BinaryExp` cuando se detectan operandos de tipo String:
+Las operaciones con cadenas se implementaron a través del reconocimiento del token `STRING_TYPE` en el scanner para las declaraciones de tipo:
 
 ```cpp
-int EvalVisitor::visit(BinaryExp* exp) {
-    int leftType = exp->left->accept(this);
-    string leftStr = (leftType == 5) ? lastString : to_string(lastInt);
-    
-    int rightType = exp->right->accept(this);
-    string rightStr = (rightType == 5) ? lastString : to_string(lastInt);
-    
-    if (exp->op == PLUS_OP && (leftType == 5 || rightType == 5)) {
-        // Concatenación de strings
-        lastString = leftStr + rightStr;
-        lastType = 5; // String type
-        return 5;
-    }
-    
-    if ((exp->op == EQ_OP || exp->op == NE_OP) && 
-        (leftType == 5 || rightType == 5)) {
-        // Comparación de strings
-        bool result = (exp->op == EQ_OP) ? 
-                     (leftStr == rightStr) : 
-                     (leftStr != rightStr);
-        lastInt = result ? 1 : 0;
-        lastType = 3; // Boolean type
-        return 3;
-    }
-    
-    // ... resto de operaciones
+else if (word == "String")
+{
+    token = new Token(Token::STRING_TYPE, word, 0, word.length());
 }
 ```
 
-Esta implementación permite concatenación polimórfica, donde strings pueden concatenarse con otros strings o con representaciones de cadena de otros tipos. Las comparaciones de igualdad y desigualdad se implementan usando los operadores nativos de string de C++, proporcionando comparación lexicográfica completa.
+Esta implementación permite declaraciones como `var mensaje: String = "Hola mundo"`. El manejo de las operaciones de concatenación, comparación y asignación se realiza en los visitadores, que procesan los tokens `Token::STRING` generados por los literales de cadena.
 
-La integración con `print()` y `println()` se maneja en la clase `PrintStatement`:
+Las funciones de impresión se integran perfectamente con strings a través de los tokens especializados:
 
 ```cpp
-void EvalVisitor::visit(PrintStatement* stm) {
-    int type = stm->e->accept(this);
-    
-    switch (type) {
-        case 5: // String
-            cout << lastString;
-            break;
-        case 1: // Int
-            cout << lastInt;
-            break;
-        case 2: // Float
-            cout << lastFloat;
-            break;
-        case 3: // Boolean
-            cout << (lastInt ? "true" : "false");
-            break;
-    }
-    
-    if (stm->isPrintln) {
-        cout << endl;
-    }
+else if (word == "print")
+{
+    token = new Token(Token::PRINT, word, 0, word.length());
+}
+else if (word == "println")
+{
+    token = new Token(Token::PRINTLN, word, 0, word.length());
 }
 ```
 
 #### Operaciones con Float
 
-Las operaciones aritméticas con números flotantes se implementaron con soporte completo para conversiones automáticas de tipo y manejo de precisión. El sistema detecta automáticamente cuando una operación involucra al menos un operando flotante y promueve toda la operación a aritmética de punto flotante:
+Las operaciones aritméticas con números flotantes se reconocen a través del token `DECIMAL` y se procesan según la presencia del flag `has_f`. El scanner maneja correctamente la diferenciación entre literales enteros y flotantes:
 
 ```cpp
-int EvalVisitor::visit(BinaryExp* exp) {
-    int leftType = exp->left->accept(this);
-    double leftVal = (leftType == 2) ? lastFloat : (double)lastInt;
-    
-    int rightType = exp->right->accept(this);
-    double rightVal = (rightType == 2) ? lastFloat : (double)lastInt;
-    
-    bool isFloatOperation = (leftType == 2 || rightType == 2);
-    
-    if (isFloatOperation) {
-        switch (exp->op) {
-            case PLUS_OP:
-                lastFloat = leftVal + rightVal;
-                lastType = 2;
-                return 2;
-            case MINUS_OP:
-                lastFloat = leftVal - rightVal;
-                lastType = 2;
-                return 2;
-            case MUL_OP:
-                lastFloat = leftVal * rightVal;
-                lastType = 2;
-                return 2;
-            case DIV_OP:
-                if (rightVal == 0.0) {
-                    throw runtime_error("División por cero");
-                }
-                lastFloat = leftVal / rightVal;
-                lastType = 2;
-                return 2;
-            case LT_OP:
-                lastInt = (leftVal < rightVal) ? 1 : 0;
-                lastType = 3;
-                return 3;
-            // ... otros operadores de comparación
-        }
-    }
-    // ... manejo de operaciones enteras
+token = new Token(Token::DECIMAL, input, first, current - first);
+token->has_f = has_f;
+```
+
+El sistema de tokens también reconoce el tipo Float para declaraciones:
+
+```cpp
+else if (word == "Float")
+{
+    token = new Token(Token::FLOAT, word, 0, word.length());
 }
 ```
 
-Esta implementación asegura que las operaciones mixtas (como `3.14 + 2`) se manejen correctamente, promoviendo el entero a flotante antes de realizar la operación. El manejo de errores incluye detección de división por cero específica para operaciones flotantes.
-
-Las operaciones compuestas se implementaron extendiendo la clase `AssignStatement` para manejar operadores como `+=`, `-=`, `*=`, y `/=`:
+Las operaciones compuestas se manejan a través de tokens especializados como `PLUS_ASSIGN`, `MINUS_ASSIGN`, etc.:
 
 ```cpp
-void EvalVisitor::visit(AssignStatement* stm) {
-    if (stm->op == AssignStatement::PLUS_ASSIGN_OP) {
-        // Obtener valor actual de la variable
-        int currentType = getVariableType(stm->id);
-        double currentVal = (currentType == 2) ? 
-                           env.getFloat(stm->id) : 
-                           (double)env.getInt(stm->id);
-        
-        // Evaluar lado derecho
-        int rightType = stm->rhs->accept(this);
-        double rightVal = (rightType == 2) ? lastFloat : (double)lastInt;
-        
-        // Realizar operación y asignar
-        if (currentType == 2 || rightType == 2) {
-            double result = currentVal + rightVal;
-            env.setFloat(stm->id, result);
-        } else {
-            int result = (int)currentVal + (int)rightVal;
-            env.setInt(stm->id, result);
-        }
+case '+':
+    if (current + 1 < input.length() && input[current + 1] == '=')
+    {
+        token = new Token(Token::PLUS_ASSIGN, "+=", 0, 2);
+        current++;
     }
-    // ... otros operadores compuestos
-}
+    // ... otras variaciones
 ```
 
 ### 3. Estructura de Visitors y Diseño
@@ -365,101 +296,62 @@ El diseño arquitectónico del compilador se basa en el patrón Visitor, que pro
 
 #### PrintVisitor
 
-El `PrintVisitor` se encarga de generar una representación textual del AST que facilita la depuración y comprensión del análisis sintáctico. Para los nuevos tipos, se implementaron métodos específicos que manejan la visualización apropiada:
+El `PrintVisitor` se encarga de generar una representación textual del AST. Para los nuevos tipos, la clase incluye métodos `visit` especializados que manejan `StringExp` y `DecimalExp`:
 
 ```cpp
-int PrintVisitor::visit(StringExp* exp) {
-    imprimirIndentacion();
-    cout << "StringLiteral: \"" << exp->value << "\"" << endl;
-    return 0;
-}
+class PrintVisitor : public Visitor
+{
+private:
+    int indent = 0;
+    void imprimirIndentacion();
 
-int PrintVisitor::visit(DecimalExp* exp) {
-    imprimirIndentacion();
-    cout << "DecimalLiteral: " << exp->value << endl;
-    return 0;
-}
-
-void PrintVisitor::imprimirIndentacion() {
-    for (int i = 0; i < indent; i++) {
-        cout << "  ";
-    }
-}
+public:
+    void imprimir(Program *program);
+    int visit(StringExp *exp) override;
+    int visit(DecimalExp *exp) override;
+    // ... otros métodos visit
+};
 ```
 
-El sistema de indentación se implementó para mejorar la legibilidad de la salida, creando una estructura jerárquica visual que refleja la estructura del AST. Cada nivel de anidamiento se representa con dos espacios adicionales, facilitando la identificación de relaciones padre-hijo en el árbol.
+El sistema de indentación se implementó para mejorar la legibilidad de la salida, creando una estructura jerárquica visual que refleja la estructura del AST. La función `imprimirIndentacion()` genera espacios apropiados para cada nivel de anidamiento.
 
 #### EvalVisitor
 
-El `EvalVisitor` implementa el intérprete del lenguaje, ejecutando directamente el código representado en el AST. Su diseño incluye un sistema sofisticado de manejo de tipos que permite operaciones polimórficas y conversiones automáticas:
+El `EvalVisitor` implementa el intérprete del lenguaje, ejecutando directamente el código representado en el AST. Su diseño incluye variables de estado para manejar diferentes tipos de datos:
 
 ```cpp
-class EvalVisitor : public Visitor {
-private:
+class EvalVisitor : public Visitor
+{
     Environment env;
-    int lastType;    // 1=Int, 2=Float, 3=Boolean, 5=String
+    std::unordered_map<string, FunctionDecl *> functions;
+    int lastType;
     int lastInt;
     float lastFloat;
     string lastString;
-    
+    bool returnExecuted;
+    bool breakExecuted;
+    bool continueExecuted;
+    bool inBlockExecutionContext;
+    bool inFunctionBody;
+
 public:
-    int visit(StringExp* exp) override {
-        lastString = exp->value;
-        lastType = 5;
-        return 5;
-    }
-    
-    int visit(DecimalExp* exp) override {
-        lastFloat = (float)exp->value;
-        lastType = 2;
-        return 2;
-    }
+    void ejecutar(Program *program);
+    void executeBlock(Block *block);
+    int visit(StringExp *exp) override;
+    int visit(DecimalExp *exp) override;
+    // ... otros métodos visit
 };
 ```
 
-El sistema de tipos utiliza variables de estado (`lastType`, `lastInt`, `lastFloat`, `lastString`) para mantener el resultado de la última evaluación. Este diseño permite que las operaciones accedan al valor y tipo del resultado sin necesidad de estructuras de datos complejas o boxing/unboxing explícito.
-
-El `Environment` maneja el almacenamiento de variables con soporte para múltiples tipos:
-
-```cpp
-class Environment {
-private:
-    unordered_map<string, int> intVars;
-    unordered_map<string, float> floatVars;
-    unordered_map<string, string> stringVars;
-    unordered_map<string, int> varTypes;
-    
-public:
-    void setInt(const string& name, int value) {
-        intVars[name] = value;
-        varTypes[name] = 1;
-    }
-    
-    void setFloat(const string& name, float value) {
-        floatVars[name] = value;
-        varTypes[name] = 2;
-    }
-    
-    void setString(const string& name, const string& value) {
-        stringVars[name] = value;
-        varTypes[name] = 5;
-    }
-    
-    int getType(const string& name) {
-        return varTypes.count(name) ? varTypes[name] : 0;
-    }
-};
-```
+El sistema utiliza variables de estado (`lastType`, `lastInt`, `lastFloat`, `lastString`) para mantener el resultado de la última evaluación. Este diseño permite que las operaciones accedan al valor y tipo del resultado sin necesidad de estructuras de datos complejas.
 
 #### Diseño Arquitectónico y Extensibilidad
 
-La arquitectura basada en el patrón Visitor proporciona varios beneficios fundamentales que fueron cruciales para la implementación exitosa de String y Float:
+La arquitectura basada en el patrón Visitor proporciona varios beneficios fundamentales:
 
-**Separación de Responsabilidades**: Cada visitor se enfoca en un aspecto específico del procesamiento. El `PrintVisitor` maneja únicamente la representación textual, mientras que el `EvalVisitor` se concentra en la ejecución. Esta separación permitió implementar el soporte para nuevos tipos sin afectar funcionalidades existentes.
+**Separación de Responsabilidades**: Cada visitor se enfoca en un aspecto específico del procesamiento. Esta separación permitió implementar el soporte para nuevos tipos sin afectar funcionalidades existentes.
 
-**Extensibilidad**: La adición de nuevos tipos requirió únicamente la implementación de métodos `visit` específicos en cada visitor existente, sin modificar la estructura base del AST ni las interfaces existentes. Esto demuestra la robustez del diseño para futuras extensiones.
-
-**Polimorfismo Dinámico**: El método `accept` en cada nodo del AST utiliza polimorfismo dinámico para invocar el método `visit` apropiado en cada visitor:
+**Polimorfismo Dinámico**: El método `accept` en cada nodo del AST utiliza polimorfismo dinámico para invocar el método `visit` apropiado:
 
 ```cpp
 int StringExp::accept(Visitor* visitor) {
@@ -473,7 +365,7 @@ int DecimalExp::accept(Visitor* visitor) {
 
 Este diseño permite que el mismo AST sea procesado por múltiples visitors sin conocimiento explícito del tipo de visitor, facilitando la reutilización y el mantenimiento del código.
 
-**Mantenibilidad**: Los cambios en la lógica de procesamiento de un tipo específico se localizan en los métodos correspondientes de cada visitor, minimizando el impacto de modificaciones y simplificando la depuración y el mantenimiento del sistema.
+**Extensibilidad**: La adición de nuevos tipos requirió únicamente la implementación de métodos `visit` específicos en cada visitor existente, sin modificar la estructura base del AST ni las interfaces existentes. Esto demuestra la robustez del diseño para futuras extensiones del lenguaje.
 
 ## Conclusión
 
